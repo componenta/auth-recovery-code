@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace Componenta\Auth\RecoveryCode;
 
 use Componenta\Auth\Session\AuthSession;
-use Componenta\Auth\Session\AuthSessionManagerInterface;
+use Componenta\Auth\Session\AuthenticatedSessionIssuer;
 use Componenta\Auth\Session\Http\AuthSessionGrantPublisher;
-use Componenta\Auth\Session\RotationReason;
 use Componenta\Identity\IdentityInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -19,7 +18,7 @@ final readonly class RecoveryCodeReauthenticationHandler implements
 {
     public function __construct(
         private RecoveryCodeManagerInterface $codes,
-        private AuthSessionManagerInterface $sessions,
+        private AuthenticatedSessionIssuer $sessionIssuer,
         private AuthSessionGrantPublisher $publisher,
         private ResponseFactoryInterface $responses,
     ) {}
@@ -56,10 +55,10 @@ final readonly class RecoveryCodeReauthenticationHandler implements
             return $this->denied();
         }
 
-        $grant = $this->sessions->rotate(
+        $grant = $this->sessionIssuer->reauthenticate(
             $session,
+            $identity,
             RecoveryCodeEvidence::create(),
-            RotationReason::Reauthentication,
         );
 
         return $this->publisher->publish(
