@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Componenta\Auth\RecoveryCode;
 
-final readonly class RecoveryCode implements \Stringable, \JsonSerializable
+final readonly class RecoveryCode implements \JsonSerializable
 {
     private const string PATTERN =
         '/\A[a-f0-9]{4}(?:-[a-f0-9]{4}){7}\z/D';
@@ -47,11 +47,6 @@ final readonly class RecoveryCode implements \Stringable, \JsonSerializable
         );
     }
 
-    #[\Override]
-    public function __toString(): string
-    {
-        return $this->value;
-    }
 
     public function toString(): string
     {

@@ -21,5 +21,6 @@ final class RecoveryCodeTest extends TestCase
             $code->toString(),
             json_encode($code, JSON_THROW_ON_ERROR),
         );
+        self::assertNotInstanceOf(\Stringable::class, $code);
     }
 }
