@@ -58,7 +58,7 @@ final readonly class RecoveryCodeReauthenticationHandler implements
 
         $grant = $this->sessions->rotate(
             $session,
-            RecoveryCodeEvidence::augment($session->evidence),
+            RecoveryCodeEvidence::create(),
             RotationReason::Reauthentication,
         );
 

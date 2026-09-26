@@ -10,18 +10,11 @@ final class RecoveryCodeEvidence
 {
     private function __construct() {}
 
-    public static function augment(
-        AuthenticationEvidence $evidence,
-    ): AuthenticationEvidence {
+    public static function create(): AuthenticationEvidence
+    {
         return new AuthenticationEvidence(
-            methods: array_values(array_unique([
-                ...$evidence->methods,
-                'recovery_code',
-            ])),
-            capabilities: array_values(array_unique([
-                ...$evidence->capabilities,
-                'recovery',
-            ])),
+            methods: ['recovery_code'],
+            capabilities: ['recovery'],
         );
     }
 }
