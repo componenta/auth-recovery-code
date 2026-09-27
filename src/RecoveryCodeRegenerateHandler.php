@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Componenta\Auth\RecoveryCode;
 
+use Componenta\Auth\Session\Http\FactorManagementGuard;
 use Componenta\Identity\IdentityInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -16,6 +17,7 @@ final readonly class RecoveryCodeRegenerateHandler implements
     public function __construct(
         private RecoveryCodeManagerInterface $codes,
         private ResponseFactoryInterface $responses,
+        private FactorManagementGuard $guard,
         private int $count = 10,
     ) {}
 
@@ -24,6 +26,10 @@ final readonly class RecoveryCodeRegenerateHandler implements
         #[\SensitiveParameter]
         ServerRequestInterface $request,
     ): ResponseInterface {
+        if (($denial = $this->guard->check($request)) !== null) {
+            return $denial;
+        }
+
         $identity = $request->getAttribute(IdentityInterface::class);
 
         if (!$identity instanceof IdentityInterface) {

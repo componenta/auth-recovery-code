@@ -17,3 +17,9 @@ transaction, without network calls or user interaction. Concurrent requests for
 the same subject are serialized; only the last committed batch remains active.
 An earlier response can therefore contain an already-superseded batch. The UI
 should prevent duplicate regeneration submissions and never merge code batches.
+
+The bundled HTTP regeneration handler also requires the explicit
+`FactorManagementGuard`. Use an authoritative session registry, a shared
+`AuthenticationAdmission`, a CSRF key and a bounded `AssuranceRequirement` for an
+existing permitted factor. Bootstrap and replacement policies are application
+choices, not an implicit allow for any authenticated session.

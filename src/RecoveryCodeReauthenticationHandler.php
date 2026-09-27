@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Componenta\Auth\RecoveryCode;
 
+use Componenta\Auth\DeniedReasonInterface;
 use Componenta\Auth\Session\AuthSession;
 use Componenta\Auth\Session\AuthenticatedSessionIssuer;
 use Componenta\Auth\Session\Http\AuthSessionGrantPublisher;
@@ -60,6 +61,10 @@ final readonly class RecoveryCodeReauthenticationHandler implements
             $identity,
             RecoveryCodeEvidence::create(),
         );
+
+        if ($grant instanceof DeniedReasonInterface) {
+            return $this->denied();
+        }
 
         return $this->publisher->publish(
             $request,
