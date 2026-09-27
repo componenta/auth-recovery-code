@@ -6,6 +6,8 @@ namespace Componenta\Auth\RecoveryCode;
 
 use Componenta\Identity\UuidInterface;
 use Cycle\Database\DatabaseInterface;
+use Cycle\Database\Injection\Fragment;
+use Cycle\Database\Query\OnConflict;
 use DateTimeImmutable;
 use DateTimeZone;
 use Psr\Clock\ClockInterface;
@@ -21,8 +23,12 @@ final readonly class DatabaseRecoveryCodeManager implements
         private DatabaseInterface $database,
         private ClockInterface $clock,
         private string $table = 'auth_recovery_codes',
+        private string $subjectLockTable = 'auth_recovery_code_subject_locks',
     ) {
-        if (preg_match('/\A[A-Za-z_][A-Za-z0-9_]*\z/D', $this->table) !== 1) {
+        if (
+            preg_match('/\A[A-Za-z_][A-Za-z0-9_]*\z/D', $this->table) !== 1
+            || preg_match('/\A[A-Za-z_][A-Za-z0-9_]*\z/D', $this->subjectLockTable) !== 1
+        ) {
             throw new \InvalidArgumentException(
                 'Recovery-code table name is invalid.',
             );
@@ -56,6 +62,8 @@ final readonly class DatabaseRecoveryCodeManager implements
             $createdAt,
             $codes,
         ): void {
+            // A durable subject row also serializes the first-ever batch.
+            $this->acquireSubjectLock($subject);
             $this->database->delete($this->table)
                 ->where('subject_uuid', $subject)
                 ->run();
@@ -94,7 +102,10 @@ final readonly class DatabaseRecoveryCodeManager implements
     #[\Override]
     public function remaining(UuidInterface $subjectId): int
     {
-        return $this->database->select()
+        return $this->database->select()->withDriver(
+                $this->database->getDriver(DatabaseInterface::WRITE),
+                $this->database->getPrefix(),
+            )
             ->from($this->table)
             ->where('subject_uuid', $subjectId->toString())
             ->where('used_at', null)
@@ -104,9 +115,30 @@ final readonly class DatabaseRecoveryCodeManager implements
     #[\Override]
     public function revokeAll(UuidInterface $subjectId): void
     {
-        $this->database->delete($this->table)
-            ->where('subject_uuid', $subjectId->toString())
+        $this->database->transaction(function () use ($subjectId): void {
+            $subject = $subjectId->toString();
+            $this->acquireSubjectLock($subject);
+            $this->database->delete($this->table)
+                ->where('subject_uuid', $subject)
+                ->run();
+        });
+    }
+
+    private function acquireSubjectLock(string $subject): void
+    {
+        $this->database->insert($this->subjectLockTable)->values([
+            'subject_uuid' => $subject,
+            'lock_version' => 0,
+        ])->onConflict(OnConflict::target('subject_uuid')->doNothing())->run();
+
+        $affected = $this->database->update($this->subjectLockTable)
+            ->where('subject_uuid', $subject)
+            ->values(['lock_version' => new Fragment('lock_version + 1')])
             ->run();
+
+        if ($affected !== 1) {
+            throw new \RuntimeException('Could not acquire recovery-code subject lock.');
+        }
     }
 
     private static function hash(
