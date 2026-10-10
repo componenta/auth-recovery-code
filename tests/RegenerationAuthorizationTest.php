@@ -46,6 +46,7 @@ final class RegenerationAuthorizationTest extends TestCase
     {
         yield ['get', 405];
         yield ['no-csrf', 403];
+        yield ['missing-origin', 403];
         yield ['stale', 403];
         yield ['allowed', 200];
     }
@@ -71,6 +72,9 @@ final class RegenerationAuthorizationTest extends TestCase
         $request = (new ServerRequest($case === 'get' ? 'GET' : 'POST', 'https://example.test/factors'))
             ->withAttribute(IdentityInterface::class, $identity)
             ->withAttribute(AuthSession::class, $session);
+        if ($case !== 'missing-origin') {
+            $request = $request->withHeader('Origin', 'https://example.test');
+        }
         if ($case !== 'no-csrf') {
             $request = $request->withHeader('X-CSRF-Token', (new AuthSessionCsrfTokenManager($session, $key))->generate());
         }
