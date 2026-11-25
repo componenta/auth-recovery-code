@@ -19,11 +19,13 @@ use Componenta\Identity\UuidFactory;
 use Componenta\Identity\UuidInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
+use Nyholm\Psr7\Response;
 use Nyholm\Psr7\Stream;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\StreamInterface;
 
 use Componenta\Auth\RecoveryCode\DatabaseRecoveryCodeManager;
 use Componenta\Auth\RecoveryCode\RecoveryCode;
@@ -34,6 +36,77 @@ use Componenta\Auth\RecoveryCode\Tests\Support\SqliteDatabaseFixture;
 
 final class RegenerationAuthorizationTest extends TestCase
 {
+    /** @return iterable<string, array{string}> */
+    public static function responseStreams(): iterable
+    {
+        foreach (['complete', 'partial', 'stalled', 'throwing'] as $mode) {
+            yield $mode => [$mode];
+        }
+    }
+
+    #[DataProvider('responseStreams')]
+    public function testRegenerationReturnsCompleteCodesOrPropagatesBodyFailure(string $mode): void
+    {
+        if (!extension_loaded('pdo_sqlite')) {
+            self::markTestSkipped('pdo_sqlite is required.');
+        }
+
+        [$gate, $request, , $identity] = $this->context('allowed');
+        $manager = new DatabaseRecoveryCodeManager(SqliteDatabaseFixture::create(), new FrozenClock('2030-01-01T00:00:00Z', 'UTC'));
+        $sink = new class {
+            public string $body = '';
+            public int $calls = 0;
+        };
+        $failure = new \RuntimeException('Synthetic stream failure.');
+        $stream = $this->createStub(StreamInterface::class);
+        $stream->method('write')->willReturnCallback(static function (string $bytes) use ($sink, $mode, $failure): int {
+            if (++$sink->calls > 1) {
+                if ($mode === 'stalled') {
+                    return 0;
+                }
+                if ($mode === 'throwing') {
+                    throw $failure;
+                }
+            }
+
+            $written = $mode === 'complete' ? strlen($bytes) : min(7, strlen($bytes));
+            $sink->body .= substr($bytes, 0, $written);
+
+            return $written;
+        });
+        $stream->method('__toString')->willReturnCallback(static fn(): string => $sink->body);
+        $responses = $this->createStub(ResponseFactoryInterface::class);
+        $responses->method('createResponse')->willReturn(new Response(200, [], $stream));
+        $failureObserved = null;
+        $response = null;
+
+        try {
+            $response = (new RecoveryCodeRegenerateHandler($manager, $responses, $gate, count: 2))->handle($request);
+        } catch (\RuntimeException $exception) {
+            $failureObserved = $exception;
+        }
+
+        if (in_array($mode, ['stalled', 'throwing'], true)) {
+            self::assertInstanceOf(\RuntimeException::class, $failureObserved, 'Incomplete codes must not be returned as success.');
+            self::assertNull($response);
+            if ($mode === 'throwing') {
+                self::assertSame($failure, $failureObserved);
+            }
+
+            return;
+        }
+
+        self::assertNull($failureObserved);
+        self::assertInstanceOf(ResponseInterface::class, $response);
+        self::assertSame(200, $response->getStatusCode());
+        self::assertJson((string) $response->getBody());
+        $body = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertCount(2, $body['codes']);
+        foreach ($body['codes'] as $code) {
+            self::assertTrue($manager->consume($identity->uuid, RecoveryCode::fromString($code)));
+        }
+    }
+
     /** @return iterable<string, array{string}> */
     public static function responsePreparationFailures(): iterable
     {

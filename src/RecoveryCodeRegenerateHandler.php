@@ -42,12 +42,12 @@ final readonly class RecoveryCodeRegenerateHandler implements
             ->withHeader('Cache-Control', 'no-store')
             ->withHeader('Pragma', 'no-cache');
         $batch = $this->codes->regenerate($identity->uuid, $this->count);
-        $response->getBody()->write(json_encode([
+        JsonResponseBody::write($response, [
             'codes' => array_map(
                 static fn(RecoveryCode $code): string => $code->toString(),
                 $batch->codes,
             ),
-        ], JSON_THROW_ON_ERROR));
+        ]);
 
         return $response;
     }
