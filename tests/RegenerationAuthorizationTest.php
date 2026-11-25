@@ -19,16 +19,64 @@ use Componenta\Identity\UuidFactory;
 use Componenta\Identity\UuidInterface;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\ServerRequest;
+use Nyholm\Psr7\Stream;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ResponseInterface;
 
+use Componenta\Auth\RecoveryCode\DatabaseRecoveryCodeManager;
 use Componenta\Auth\RecoveryCode\RecoveryCode;
 use Componenta\Auth\RecoveryCode\RecoveryCodeBatch;
 use Componenta\Auth\RecoveryCode\RecoveryCodeManagerInterface;
 use Componenta\Auth\RecoveryCode\RecoveryCodeRegenerateHandler;
+use Componenta\Auth\RecoveryCode\Tests\Support\SqliteDatabaseFixture;
 
 final class RegenerationAuthorizationTest extends TestCase
 {
+    /** @return iterable<string, array{string}> */
+    public static function responsePreparationFailures(): iterable
+    {
+        yield 'response factory' => ['factory'];
+        yield 'response headers' => ['headers'];
+    }
+
+    #[DataProvider('responsePreparationFailures')]
+    public function testResponsePreparationFailurePreservesExistingBatch(string $stage): void
+    {
+        if (!extension_loaded('pdo_sqlite')) {
+            self::markTestSkipped('pdo_sqlite is required.');
+        }
+
+        [$gate, $request, , $identity] = $this->context('allowed');
+        $manager = new DatabaseRecoveryCodeManager(
+            SqliteDatabaseFixture::create(),
+            new FrozenClock('2030-01-01T00:00:00Z', 'UTC'),
+        );
+        $existing = $manager->regenerate($identity->uuid, 2);
+        $failure = new \RuntimeException('response preparation failed');
+        $responses = $this->createStub(ResponseFactoryInterface::class);
+
+        if ($stage === 'factory') {
+            $responses->method('createResponse')->willThrowException($failure);
+        } else {
+            $response = $this->createStub(ResponseInterface::class);
+            $response->method('getBody')->willReturn(Stream::create(''));
+            $response->method('withHeader')->willThrowException($failure);
+            $responses->method('createResponse')->willReturn($response);
+        }
+
+        try {
+            (new RecoveryCodeRegenerateHandler($manager, $responses, $gate, count: 2))->handle($request);
+            self::fail('Response preparation must fail.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame($failure, $exception);
+        }
+
+        self::assertTrue($manager->consume($identity->uuid, $existing->codes[0]));
+        self::assertTrue($manager->consume($identity->uuid, $existing->codes[1]));
+    }
+
     #[DataProvider('requests')]
     public function testGateRunsBeforeCodeRegeneration(string $case, int $status): void
     {

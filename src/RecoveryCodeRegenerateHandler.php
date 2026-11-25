@@ -36,8 +36,12 @@ final readonly class RecoveryCodeRegenerateHandler implements
             return $this->responses->createResponse(401);
         }
 
+        // Prepare the response before invalidating the user's previous batch.
+        $response = $this->responses->createResponse(200)
+            ->withHeader('Content-Type', 'application/json')
+            ->withHeader('Cache-Control', 'no-store')
+            ->withHeader('Pragma', 'no-cache');
         $batch = $this->codes->regenerate($identity->uuid, $this->count);
-        $response = $this->responses->createResponse(200);
         $response->getBody()->write(json_encode([
             'codes' => array_map(
                 static fn(RecoveryCode $code): string => $code->toString(),
@@ -45,9 +49,6 @@ final readonly class RecoveryCodeRegenerateHandler implements
             ),
         ], JSON_THROW_ON_ERROR));
 
-        return $response
-            ->withHeader('Content-Type', 'application/json')
-            ->withHeader('Cache-Control', 'no-store')
-            ->withHeader('Pragma', 'no-cache');
+        return $response;
     }
 }
