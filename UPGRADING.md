@@ -1,4 +1,4 @@
-# Auth 3 development upgrade: recovery-code serialization
+# Auth 4 upgrade: recovery-code serialization
 
 The database adapter now requires `auth_recovery_code_subject_locks` in addition
 to `auth_recovery_codes`. Apply a generated application migration matching the
